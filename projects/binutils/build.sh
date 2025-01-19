@@ -42,7 +42,7 @@ mkdir fuzz
 cp ../fuzz_*.c fuzz/
 cd fuzz
 
-LIBS="../opcodes/libopcodes.a ../libctf/.libs/libctf.a ../bfd/libbfd.a ../zlib/libz.a ../libiberty/libiberty.a"
+LIBS="../opcodes/libopcodes.a ../libctf/.libs/libctf.a ../bfd/.libs/libbfd.a ../zlib/libz.a ../libsframe/.libs/libsframe.a ../libiberty/libiberty.a"
 for i in fuzz_disassemble fuzz_bfd fuzz_bfd_ext; do
     $CC $CFLAGS -I ../include -I ../bfd -I ../opcodes -c $i.c -o $i.o
     $CXX $CXXFLAGS $i.o -o $OUT/$i $LIB_FUZZING_ENGINE -Wl,--start-group ${LIBS} -Wl,--end-group
@@ -67,9 +67,6 @@ cd ../binutils
 # Compile the fuzzers.
 # The general strategy is to remove main functions such that the fuzzer (which has its own main)
 # can link against the code.
-
-# Copy over precondition files
-cp $SRC/binutils-preconditions/*.h .
 
 #
 # Patching
@@ -166,11 +163,11 @@ then
   $CXX $CXXFLAGS $LIB_FUZZING_ENGINE -I./../zlib -o $OUT/fuzz_as ./fuzz_as.o \
       libar.a config/tc-i386.o config/obj-elf.o config/atof-ieee.o  \
       ../opcodes/.libs/libopcodes.a ../bfd/.libs/libbfd.a \
-      -L/src/binutils-gdb/zlib ../libiberty/libiberty.a -lz
+      -L/src/binutils-gdb/zlib ../libsframe/.libs/libsframe.a ../libiberty/libiberty.a -lz
 fi
 
 # Copy seeds out
-for fuzzname in readelf_pef readelf_elf32_csky readelf_elf64_mmix readelf_elf32_littlearm readelf_elf32_bigarm objdump objdump_safe nm objcopy bdf windres addr2line dwarf; do
+for fuzzname in readelf_pef readelf_elf32_csky readelf_elf64_mmix readelf_elf32_littlearm readelf_elf32_bigarm objdump objdump_safe nm objcopy bfd windres addr2line dwarf; do
   cp $SRC/binary-samples/oss-fuzz-binutils/general_seeds.zip $OUT/fuzz_${fuzzname}_seed_corpus.zip
 done
 # Seed targeted the pef file format

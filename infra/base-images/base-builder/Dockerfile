@@ -16,27 +16,12 @@
 
 FROM gcr.io/oss-fuzz-base/base-clang
 
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:git-core/ppa && \
-    apt-get update && \
-    apt-get install -y \
-        binutils-dev \
-        build-essential \
-        curl \
-        wget \
-        git \
-        jq \
-        libc6-dev-i386 \
-        patchelf \
-        rsync \
-        subversion \
-        zip
+COPY install_deps.sh /
+RUN /install_deps.sh && rm /install_deps.sh
 
-# Build and install latest Python 3 (3.8.3).
-ENV PYTHON_VERSION 3.8.3
-RUN export PYTHON_DEPS="\
+# Build and install latest Python 3.10.
+ENV PYTHON_VERSION 3.10.14
+RUN PYTHON_DEPS="\
         zlib1g-dev \
         libncurses5-dev \
         libgdbm-dev \
@@ -54,13 +39,25 @@ RUN export PYTHON_DEPS="\
     tar -xvf Python-$PYTHON_VERSION.tar.xz && \
     cd Python-$PYTHON_VERSION && \
     ./configure --enable-optimizations --enable-shared && \
-    make -j install && \
+    make -j$(nproc) install && \
     ldconfig && \
-    ln -s /usr/bin/python3 /usr/bin/python && \
+    ln -s /usr/local/bin/python3 /usr/local/bin/python && \
     cd .. && \
     rm -r /tmp/Python-$PYTHON_VERSION.tar.xz /tmp/Python-$PYTHON_VERSION && \
-    rm -rf /usr/local/lib/python3.8/test && \
+    rm -rf /usr/local/lib/python${PYTHON_VERSION%.*}/test && \
+    python3 -m ensurepip && \
+    python3 -m pip install --upgrade pip && \
     apt-get remove -y $PYTHON_DEPS # https://github.com/google/oss-fuzz/issues/3888
+
+
+ENV CCACHE_VERSION 4.10.2
+RUN cd /tmp && curl -OL https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION.tar.xz && \
+    tar -xvf ccache-$CCACHE_VERSION.tar.xz && cd ccache-$CCACHE_VERSION && \
+    mkdir build && cd build && \
+    export LDFLAGS='-lpthread' && \
+    cmake -D CMAKE_BUILD_TYPE=Release .. && \
+    make -j && make install && \
+    rm -rf /tmp/ccache-$CCACHE_VERSION /tmp/ccache-$CCACHE_VERSION.tar.xz
 
 # Install six for Bazel rules.
 RUN unset CFLAGS CXXFLAGS && pip3 install -v --no-cache-dir \
@@ -73,17 +70,19 @@ RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v$BAZELISK_
 
 # Default build flags for various sanitizers.
 ENV SANITIZER_FLAGS_address "-fsanitize=address -fsanitize-address-use-after-scope"
+ENV SANITIZER_FLAGS_hwaddress "-fsanitize=hwaddress -fuse-ld=lld -Wno-unused-command-line-argument"
 
 # Set of '-fsanitize' flags matches '-fno-sanitize-recover' + 'unsigned-integer-overflow'.
-ENV SANITIZER_FLAGS_undefined "-fsanitize=array-bounds,bool,builtin,enum,float-divide-by-zero,function,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unsigned-integer-overflow,unreachable,vla-bound,vptr -fno-sanitize-recover=array-bounds,bool,builtin,enum,float-divide-by-zero,function,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unreachable,vla-bound,vptr"
+ENV SANITIZER_FLAGS_undefined "-fsanitize=array-bounds,bool,builtin,enum,function,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unsigned-integer-overflow,unreachable,vla-bound,vptr -fno-sanitize-recover=array-bounds,bool,builtin,enum,function,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unreachable,vla-bound,vptr"
+
+# Don't include "function" since it is unsupported on aarch64.
+ENV SANITIZER_FLAGS_undefined_aarch64 "-fsanitize=array-bounds,bool,builtin,enum,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unsigned-integer-overflow,unreachable,vla-bound,vptr -fno-sanitize-recover=array-bounds,bool,builtin,enum,integer-divide-by-zero,null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,unreachable,vla-bound,vptr"
 
 ENV SANITIZER_FLAGS_memory "-fsanitize=memory -fsanitize-memory-track-origins"
 
-ENV SANITIZER_FLAGS_dataflow "-fsanitize=dataflow"
-
 ENV SANITIZER_FLAGS_thread "-fsanitize=thread"
 
-ENV SANITIZER_FLAGS_introspector "-flegacy-pass-manager -flto"
+ENV SANITIZER_FLAGS_introspector "-O0 -flto -fno-inline-functions -fuse-ld=gold -Wno-unused-command-line-argument"
 
 # Do not use any sanitizers in the coverage build.
 ENV SANITIZER_FLAGS_coverage ""
@@ -101,9 +100,6 @@ ENV COVERAGE_FLAGS="-fsanitize=fuzzer-no-link"
 # Use '-Wno-unused-command-line-argument' to suppress "warning: -ldl: 'linker' input unused"
 # messages which are treated as errors by some projects.
 ENV COVERAGE_FLAGS_coverage "-fprofile-instr-generate -fcoverage-mapping -pthread -Wl,--no-as-needed -Wl,-ldl -Wl,-lm -Wno-unused-command-line-argument"
-
-# Coverage isntrumentation flags for dataflow builds.
-ENV COVERAGE_FLAGS_dataflow="-fsanitize-coverage=trace-pc-guard,pc-table,bb,trace-cmp"
 
 # Default sanitizer, fuzzing engine and architecture to use.
 ENV SANITIZER="address"
@@ -127,40 +123,90 @@ WORKDIR $SRC
 
 RUN git clone https://github.com/AFLplusplus/AFLplusplus.git aflplusplus && \
     cd aflplusplus && \
-    git checkout 550ba4d77294e61597a5259d00769c61281e0042 && \
+    git checkout daaefcddc063b356018c29027494a00bcfc3e240 && \
     wget --no-check-certificate -O oss.sh https://raw.githubusercontent.com/vanhauser-thc/binary_blobs/master/oss.sh && \
+    rm -rf .git && \
     chmod 755 oss.sh
-
-RUN cd $SRC && \
-    curl -L -O https://github.com/google/honggfuzz/archive/oss-fuzz.tar.gz && \
-    mkdir honggfuzz && \
-    cd honggfuzz && \
-    tar -xzv --strip-components=1 -f $SRC/oss-fuzz.tar.gz && \
-    rm -rf examples $SRC/oss-fuzz.tar.gz
 
 # Do precompiles before copying other scripts for better cache efficiency.
 COPY precompile_afl /usr/local/bin/
 RUN precompile_afl
 
+RUN cd $SRC && \
+    curl -L -O https://github.com/google/honggfuzz/archive/oss-fuzz.tar.gz && \
+    mkdir honggfuzz && \
+    cd honggfuzz && \
+    tar -xz --strip-components=1 -f $SRC/oss-fuzz.tar.gz && \
+    rm -rf examples $SRC/oss-fuzz.tar.gz
+
+
 COPY precompile_honggfuzz /usr/local/bin/
 RUN precompile_honggfuzz
 
-COPY cargo compile compile_afl compile_dataflow compile_libfuzzer compile_honggfuzz \
+RUN cd $SRC && \
+    git clone https://github.com/google/fuzztest && \
+    cd fuzztest && \
+    git checkout a37d133f714395cabc20dd930969a889495c9f53 && \
+    rm -rf .git
+
+ENV CENTIPEDE_BIN_DIR=$SRC/fuzztest/bazel-bin
+COPY precompile_centipede /usr/local/bin/
+RUN precompile_centipede
+
+COPY sanitizers /usr/local/lib/sanitizers
+
+COPY bazel_build_fuzz_tests \
+    cargo \
+    compile \
+    compile_afl \
+    compile_centipede \
+    compile_honggfuzz \
+    compile_fuzztests.sh \
     compile_go_fuzzer \
+    compile_javascript_fuzzer \
+    compile_libfuzzer \
     compile_native_go_fuzzer \
-    debug_afl srcmap \
-    write_labels.py bazel_build_fuzz_tests \
-    # Go, java, and swift installation scripts.
+    compile_python_fuzzer \
+    debug_afl \
+    # Go, JavaScript, Java, Python, Rust, and Swift installation scripts.
     install_go.sh \
-    install_go_CodeIntelligenceTesting.sh \
+    install_javascript.sh \
     install_java.sh \
     install_python.sh \
+    install_ruby.sh \
     install_rust.sh \
     install_swift.sh \
+    python_coverage_helper.py \
+    bash_parser.py \
+    srcmap \
+    write_labels.py \
     /usr/local/bin/
+
+# TODO: Build this as part of a multi-stage build.
+ADD https://commondatastorage.googleapis.com/clusterfuzz-builds/jcc/clang-jcc /usr/local/bin/
+ADD https://commondatastorage.googleapis.com/clusterfuzz-builds/jcc/clang++-jcc /usr/local/bin
+ADD https://commondatastorage.googleapis.com/clusterfuzz-builds/jcc/clang-jcc2 /usr/local/bin/
+ADD https://commondatastorage.googleapis.com/clusterfuzz-builds/jcc/clang++-jcc2 /usr/local/bin
+RUN chmod +x /usr/local/bin/clang-jcc /usr/local/bin/clang++-jcc /usr/local/bin/clang-jcc2 /usr/local/bin/clang++-jcc2
 
 COPY llvmsymbol.diff $SRC
 COPY detect_repo.py /opt/cifuzz/
 COPY bazel.bazelrc /root/.bazelrc
+
+# Set up ccache binary and cache directory.
+# /ccache/bin will contain the compiler wrappers, and /ccache/cache will
+# contain the actual cache, which can be saved.
+# To use this, set PATH=/ccache/bin:$PATH.
+RUN mkdir -p /ccache/bin && mkdir -p /ccache/cache && \
+    ln -s /usr/local/bin/ccache /ccache/bin/clang && \
+    ln -s /usr/local/bin/ccache /ccache/bin/clang++ && \
+    ln -s /usr/local/bin/ccache /ccache/bin/clang-jcc && \
+    ln -s /usr/local/bin/ccache /ccache/bin/clang++-jcc
+ENV CCACHE_DIR /ccache/cache
+
+# Don't check that the compiler is the same, so we can switch between jcc and
+# clang under the hood and re-use the same build cache.
+ENV CCACHE_COMPILERCHECK none
+ENV CCACHE_COMPILERTYPE clang
 
 CMD ["compile"]

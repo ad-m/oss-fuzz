@@ -51,27 +51,28 @@ fuzz_check_coff_rsrc (const char *filename, const char *target)
   bfd *abfd;
   windres_bfd wrbfd;
   asection *sec;
-  bfd_size_type size;
 
   abfd = bfd_openr (filename, target);
   if (abfd == NULL) {
     return 0;
   }
 
-  if (! bfd_check_format_matches (abfd, bfd_object, NULL)) {
+  if (! bfd_check_format (abfd, bfd_object)) {
 	  retval = 0;
 	  goto cleanup;
     }
 
   sec = bfd_get_section_by_name (abfd, ".rsrc");
-  if (sec == NULL) {
+  if (sec == NULL || sec->size == 0) {
 	  retval = 0;
 	  goto cleanup;
     }
 
   set_windres_bfd (&wrbfd, abfd, sec, WR_KIND_BFD);
-  size = bfd_section_size (sec);
-  if (size > (bfd_size_type) get_file_size (filename)) {
+
+  bfd_size_type filesize = get_file_size (filename);
+  if ((ufile_ptr) sec->filepos > filesize
+      || sec->size > filesize - sec->filepos) {
 	  retval = 0;
 	  goto cleanup;
   }

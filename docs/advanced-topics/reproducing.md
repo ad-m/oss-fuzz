@@ -23,7 +23,7 @@ reproduce it.
 Every issue has a [reproducer file]({{ site.baseurl
 }}/reference/glossary/#reproducer) (also know as a "testcase" file) attached.
 Download it. This file contains the bytes that were fed to the [fuzz
-target](http://libfuzzer.info/#fuzz-target).
+target](https://llvm.org/docs/LibFuzzer.html#fuzz-target).
 
 **Note:** If the issue is not public, you will need to login using a
 [Google account](https://support.google.com/accounts/answer/176347?hl=en)
@@ -146,9 +146,9 @@ correctly configured, even if it succeeded. To reproduce these locally, run thes
 ```bash
 $ python infra/helper.py build_image $PROJECT_NAME
 $ python infra/helper.py build_fuzzers --sanitizer <address/memory/undefined> \
-    --engine <libfuzzer/afl/honggfuzz> --architecture <x86_64/i386> $PROJECT_NAME
+    --engine <libfuzzer/afl/honggfuzz/centipede> --architecture <x86_64/i386> $PROJECT_NAME
 $ python infra/helper.py check_build  --sanitizer <address/memory/undefined> \
-    --engine <libfuzzer/afl/honggfuzz> --architecture <x86_64/i386> $PROJECT_NAME \
+    --engine <libfuzzer/afl/honggfuzz/centipede> --architecture <x86_64/i386> $PROJECT_NAME \
     <fuzz_target_name>
 ```
 

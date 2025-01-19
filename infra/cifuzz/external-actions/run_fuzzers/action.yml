@@ -56,6 +56,22 @@ inputs:
     description: 'If True, reportable crashes will be minimized.'
     required: false
     default: False
+  parallel-fuzzing:
+    description: "Whether to use all available cores for fuzzing."
+    required: false
+    default: false
+  output-sarif:
+    description: "Whether to output fuzzing results to SARIF."
+    required: false
+    default: false
+  report-timeouts:
+    description: "Whether to report fails due to timeout."
+    required: false
+    default: true
+  report-ooms:
+    description: "Whether to report fails due to OOM."
+    required: false
+    default: true
 runs:
   using: 'docker'
   image: '../../../run_fuzzers.Dockerfile'
@@ -75,3 +91,7 @@ runs:
     MINIMIZE_CRASHES: ${{ inputs.minimize-crashes }}
     CIFUZZ_DEBUG: 'True'
     CFL_PLATFORM: 'github'
+    PARALLEL_FUZZING: ${{ inputs.parallel-fuzzing }}
+    OUTPUT_SARIF: ${{ inputs.output-sarif }}
+    REPORT_TIMEOUTS: ${{ inputs.report-timeouts }}
+    REPORT_OOMS: ${{ inputs.report-ooms}}

@@ -38,7 +38,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 	assert(fd >= 0);
 
 	n = write(fd, data, size);
-	assert(n == size);
+	assert(n == (ssize_t) size);
 
 	offset = lseek(fd, 0, SEEK_SET);
 	assert(offset == 0);
@@ -52,6 +52,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 	if (dwfl_core_file_report(dwfl, core, NULL) < 0)
 		goto cleanup;
 	if (dwfl_report_end(dwfl, NULL, NULL) != 0)
+		goto cleanup;
+	if (dwfl_core_file_attach(dwfl, core) < 0)
 		goto cleanup;
 
 cleanup:

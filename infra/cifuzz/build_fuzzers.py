@@ -71,6 +71,8 @@ class Builder:  # pylint: disable=too-many-instance-attributes
       return False
     self.image_repo_path = result.image_repo_path
     self.repo_manager = result.repo_manager
+    if self.config.output_sarif:
+      self.workspace.make_repo_for_sarif(self.repo_manager)
     logging.info('repo_dir: %s.', self.repo_manager.repo_dir)
     self.host_repo_path = self.repo_manager.repo_dir
     return True
@@ -80,13 +82,19 @@ class Builder:  # pylint: disable=too-many-instance-attributes
     the fuzzers from that source code. Returns True on success."""
     docker_args, docker_container = docker.get_base_docker_run_args(
         self.workspace, self.config.sanitizer, self.config.language,
-        self.config.docker_in_docker)
+        self.config.architecture, self.config.docker_in_docker)
     if not docker_container:
       docker_args.extend(
           _get_docker_build_fuzzers_args_not_container(self.host_repo_path))
 
     build_command = self.ci_system.get_build_command(self.host_repo_path,
                                                      self.image_repo_path)
+
+    # Set extra environment variables so that they are visible to the build.
+    for key in self.config.extra_environment_variables:
+      # Don't specify their value in case they get echoed.
+      docker_args.extend(['-e', key])
+
     docker_args.extend([
         docker.get_project_image_name(self.config.oss_fuzz_project_name),
         '/bin/bash',

@@ -22,8 +22,8 @@ export LINK_FLAGS=""
 
 # Install Boost headers
     cd $SRC/
-    tar jxf boost_1_74_0.tar.bz2
-    cd boost_1_74_0/
+    tar jxf boost_1_84_0.tar.bz2
+    cd boost_1_84_0/
     CFLAGS="" CXXFLAGS="" ./bootstrap.sh
     CFLAGS="" CXXFLAGS="" ./b2 headers
     cp -R boost/ /usr/include/
@@ -37,10 +37,10 @@ if [[ $CFLAGS != *sanitize=memory* ]]
 then
     # Compile libgmp
         cd $SRC/
-        lzip -d gmp-6.2.0.tar.lz
-        tar xf gmp-6.2.0.tar
+        lzip -d gmp-6.2.1.tar.lz
+        tar xf gmp-6.2.1.tar
 
-        cd gmp-6.2.0/
+        cd gmp-6.2.1/
         autoreconf -ivf
         if [[ $CFLAGS != *-m32* ]]
         then

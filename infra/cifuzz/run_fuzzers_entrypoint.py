@@ -37,9 +37,11 @@ def delete_unneeded_docker_images(config):
       project_image,
       docker.BASE_BUILDER_TAG,
       docker.BASE_BUILDER_TAG + '-go',
+      docker.BASE_BUILDER_TAG + '-javascript',
       docker.BASE_BUILDER_TAG + '-jvm',
       docker.BASE_BUILDER_TAG + '-python',
       docker.BASE_BUILDER_TAG + '-rust',
+      docker.BASE_BUILDER_TAG + '-ruby',
       docker.BASE_BUILDER_TAG + '-swift',
   ]
   docker.delete_images(images)

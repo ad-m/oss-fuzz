@@ -16,26 +16,28 @@
 ################################################################################
 
 cd /tmp
-curl -O https://storage.googleapis.com/golang/getgo/installer_linux
-chmod +x ./installer_linux
-SHELL="bash" ./installer_linux -version=1.17
-rm -rf ./installer_linux
+
+wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+mkdir temp-go
+tar -C temp-go/ -xzf go1.23.4.linux-amd64.tar.gz
+
+mkdir /root/.go/
+mv temp-go/go/* /root/.go/
+rm -rf temp-go
 
 echo 'Set "GOPATH=/root/go"'
 echo 'Set "PATH=$PATH:/root/.go/bin:$GOPATH/bin"'
 
-go get -u github.com/mdempsky/go114-fuzz-build
+go install github.com/mdempsky/go114-fuzz-build@latest
 ln -s $GOPATH/bin/go114-fuzz-build $GOPATH/bin/go-fuzz
 
-go install golang.org/dl/gotip@latest \
-    && gotip download
+# Build signal handler
+if [ -f "$GOPATH/gosigfuzz/gosigfuzz.c" ]; then
+    clang -c $GOPATH/gosigfuzz/gosigfuzz.c -o $GOPATH/gosigfuzz/gosigfuzz.o
+fi
 
 cd /tmp
 git clone https://github.com/AdamKorcz/go-118-fuzz-build
 cd go-118-fuzz-build
-gotip build
+go build
 mv go-118-fuzz-build $GOPATH/bin/
-
-cd addimport
-gotip build
-mv addimport $GOPATH/bin/

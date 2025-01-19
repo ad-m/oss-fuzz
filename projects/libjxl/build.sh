@@ -18,6 +18,7 @@
 build_args=(
   -G Ninja
   -DBUILD_TESTING=OFF
+  -DBUILD_SHARED_LIBS=OFF
   -DJPEGXL_ENABLE_BENCHMARK=OFF
   -DJPEGXL_ENABLE_DEVTOOLS=ON
   -DJPEGXL_ENABLE_EXAMPLES=OFF
@@ -39,18 +40,30 @@ build_args=(
   rm -rf ${WORK}/libjxl-corpus
   mkdir -p ${WORK}/libjxl-corpus
   cd ${WORK}/libjxl-corpus
-  cmake \
-    "${build_args[@]}" \
-    -DCMAKE_C_FLAGS="-DHWY_DISABLED_TARGETS=HWY_SSSE3" \
-    -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=HWY_SSSE3" \
-    "${SRC}/libjxl"
+  cmake "${build_args[@]}" "${SRC}/libjxl"
   ninja clean
-  ninja fuzzer_corpus
+  ninja djxl_fuzzer_corpus jpegli_dec_fuzzer_corpus
 
-  # Generate a fuzzer corpus.
-  mkdir -p djxl_fuzzer_corpus
-  tools/fuzzer_corpus -q -r djxl_fuzzer_corpus
-  zip -q -j "${OUT}/djxl_fuzzer_seed_corpus.zip" djxl_fuzzer_corpus/*
+  # Generate fuzzer corpora.
+  fuzzers=(
+    djxl_fuzzer
+    jpegli_dec_fuzzer
+  )
+  for fuzzer in "${fuzzers[@]}"; do
+    mkdir -p "${fuzzer}_corpus"
+    "tools/${fuzzer}_corpus" -q -r "${fuzzer}_corpus"
+  done
+
+  # Copy the libjpeg-turbo seed corpus files and add 4 random bytes to each.
+  for file in $(find "${SRC}"/seed-corpora/{bugs/decompress,afl-testcases/jpeg*} -type f); do
+    dst=jpegli_dec_fuzzer_corpus/$(basename "${file}")
+    cp "${file}" "${dst}"
+    dd if=/dev/urandom bs=1 count=4 2>/dev/null >> "${dst}"
+  done
+
+  for fuzzer in "${fuzzers[@]}"; do
+    zip -q -j "${OUT}/${fuzzer}_seed_corpus.zip" "${fuzzer}_corpus"/*
+  done
 )
 
 # Build the fuzzers in release mode but force the inclusion of JXL_DASSERT()
@@ -67,16 +80,20 @@ cd ${WORK}/libjxl-fuzzer
 cmake \
   "${build_args[@]}" \
   -DJPEGXL_FUZZER_LINK_FLAGS="${LIB_FUZZING_ENGINE}" \
-  -DCMAKE_C_FLAGS="-DHWY_DISABLED_TARGETS=HWY_SSSE3 ${CFLAGS}" \
-  -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=HWY_SSSE3 ${CXXFLAGS}" \
   "${SRC}/libjxl"
 
 fuzzers=(
+  cjxl_fuzzer
   color_encoding_fuzzer
+  decode_basic_info_fuzzer
   djxl_fuzzer
   fields_fuzzer
   icc_codec_fuzzer
+  jpegli_dec_fuzzer
   rans_fuzzer
+  set_from_bytes_fuzzer
+  streaming_fuzzer
+  transforms_fuzzer
 )
 
 ninja clean

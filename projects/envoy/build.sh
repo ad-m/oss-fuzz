@@ -15,24 +15,42 @@
 #
 ################################################################################
 
+# Overcome missing dependency declaration with path mapping issue. This is
+# similar to the current abseil build (see
+# https://github.com/google/oss-fuzz/pull/12858), to overcome the issue
+# mentioned in https://github.com/bazelbuild/bazel/issues/23681.
+export USE_BAZEL_VERSION=7.4.0
+
 declare -r FUZZ_TARGET_QUERY='
-  let all_fuzz_tests = attr(tags, "fuzz_target", "...") in
+  let all_fuzz_tests = attr(tags, "fuzz_target", "test/...") in
   $all_fuzz_tests - attr(tags, "no_fuzz", $all_fuzz_tests)
 '
-declare -r OSS_FUZZ_TARGETS="$(bazel query "${FUZZ_TARGET_QUERY}" | sed 's/$/_oss_fuzz/')"
+
+if [ -n "${OSS_FUZZ_CI-}" ]
+then
+  # CI has fewer resources so restricting to a small number of fuzz targets.
+  # Choosing the header_parser, and header_map_impl.
+  declare -r OSS_FUZZ_TARGETS="$(bazel query "${FUZZ_TARGET_QUERY}" | grep ':header' | sed 's/$/_oss_fuzz/')"
+else
+  declare -r OSS_FUZZ_TARGETS="$(bazel query "${FUZZ_TARGET_QUERY}" | sed 's/$/_oss_fuzz/')"
+fi
 
 declare -r EXTRA_BAZEL_FLAGS="$(
+# Disabling layering_check because it breaks the abseil build. See
+# https://github.com/google/oss-fuzz/blob/f0fa8b5cd3f99b5905e91b336d07a870ca1bc2e3/projects/abseil-cpp/build.sh#L17-L21.
+echo "--features=-layering_check"
 if [ -n "$CC" ]; then
   echo "--action_env=CC=${CC}"
 fi
 if [ -n "$CXX" ]; then
   echo "--action_env=CXX=${CXX}"
 fi
+echo "--host_action_env=CC=gcc"
 if [ "$SANITIZER" = "undefined" ]
 then
   # Bazel uses clang to link binary, which does not link clang_rt ubsan library for C++ automatically.
   # See issue: https://github.com/bazelbuild/bazel/issues/8777
-  echo "--linkopt=$(find $(llvm-config --libdir) -name libclang_rt.ubsan_standalone_cxx-x86_64.a | head -1)"
+  echo "--linkopt=$(clang -print-file-name=libclang_rt.ubsan_standalone_cxx.a)"
   echo "--linkopt=-fsanitize=undefined"
 elif [ "$SANITIZER" = "address" ]
 then
@@ -45,7 +63,7 @@ fi
 export FUZZING_CFLAGS="$CFLAGS"
 export FUZZING_CXXFLAGS="$CXXFLAGS"
 
-# Disable instrumentation in various external libraries. These 
+# Disable instrumentation in various external libraries. These
 # are fuzzed elsewhere.
 # The following disables both coverage-instrumentation and other sanitizer instrumentation.
 # We disable instrumentation in:
@@ -84,7 +102,6 @@ then
   echo " --per_file_copt=^.*com_googlesource_code_re2.*\.cc\$@-fsanitize-coverage=0,-fno-sanitize=all"
   echo " --per_file_copt=^.*upb.*\.cpp\$@-fsanitize-coverage=0,-fno-sanitize=all"
   echo " --per_file_copt=^.*org_brotli.*\.cpp\$@-fsanitize-coverage=0,-fno-sanitize=all"
-  echo " --per_file_copt=^.*com_google_cel_cpp.*\.cpp\$@-fsanitize-coverage=0,-fno-sanitize=all"
   echo " --per_file_copt=^.*com_github_jbeder_yaml_cpp.*\.cpp\$@-fsanitize-coverage=0,-fno-sanitize=all"
   echo " --per_file_copt=^.*proxy_wasm_cpp_host/.*\.cc\$@-fsanitize-coverage=0,-fno-sanitize=all"
   echo " --per_file_copt=^.*com_github_google_libprotobuf_mutator/.*\.cc\$@-fsanitize-coverage=0,-fno-sanitize=all"
@@ -93,6 +110,7 @@ then
 
 # External dependency which needs to be compiled with sanitizers. Disable
 # coverage instrumentation.
+  echo " --per_file_copt=^.*com_google_cel_cpp.*\.cpp\$@-fsanitize-coverage=0"
   echo " --per_file_copt=^.*antlr4_runtimes.*\.cpp\$@-fsanitize-coverage=0"
   echo " --per_file_copt=^.*googletest.*\.cc\$@-fsanitize-coverage=0"
 
@@ -124,9 +142,15 @@ then
   # the profiler.
   declare -r REMAP_PATH="${OUT}/proc/self/cwd"
   mkdir -p "${REMAP_PATH}"
-  # For .cc, we only really care about source/ today.
+  # Copy the cc and header files that will be covered.
   rsync -av "${SRC}"/envoy/source "${REMAP_PATH}"
   rsync -av "${SRC}"/envoy/test "${REMAP_PATH}"
+  rsync -av "${SRC}"/envoy/envoy "${REMAP_PATH}"
+  # Envoy currently uses a modified version of http_parser (see:
+  # https://github.com/envoyproxy/envoy/issues/19749).
+  declare -r BAZEL_EXTERNAL_REMAP_PATH="${REMAP_PATH}/external/envoy/bazel/external"
+  mkdir -p "${BAZEL_EXTERNAL_REMAP_PATH}"
+  rsync -av "${SRC}"/envoy/bazel/external/http_parser "${BAZEL_EXTERNAL_REMAP_PATH}"
   # Remove filesystem loop manually.
   rm -rf "${SRC}"/envoy/bazel-envoy/external/envoy
   # Clean up symlinks with a missing referrant.

@@ -3,6 +3,8 @@ language: c++
 primary_contact: "dcunnin@google.com"
 auto_ccs:
   - "sparkprime@gmail.com"
+  - "jpa.bartholomew@gmail.com"
+  - "jpab@google.com"
 
 sanitizers:
   - address
@@ -18,3 +20,4 @@ architectures:
   - x86_64
   - i386
 main_repo: 'https://github.com/google/jsonnet.git'
+file_github_issue: True

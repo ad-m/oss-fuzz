@@ -17,7 +17,6 @@ limitations under the License.
 #include "sysdep.h"
 #include "bfd.h"
 #include "libiberty.h"
-#include "progress.h"
 #include "getopt.h"
 #include "aout/ar.h"
 #include "bucomm.h"
@@ -43,7 +42,6 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
   int f;
   bfd *arch;
-  char **matching;
 
   f = open (filename, O_RDWR | O_BINARY, 0);
   if (f < 0) {
@@ -55,7 +53,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     close(f);
     return 0;
   }
-  if (! bfd_check_format_matches (arch, bfd_archive, &matching)) {
+  if (! bfd_check_format (arch, bfd_archive)) {
     bfd_close(arch);
     return 0;
   }

@@ -35,22 +35,19 @@ _GET_ATTEMPTS = 3
 _GET_BACKOFF = 1
 
 
-def get_http_auth_headers():
+def get_http_auth_headers(config):
   """Returns HTTP headers for authentication to the API."""
-  # Undocumented token used for artifacts auth.
-  token = os.environ.get('ACTIONS_RUNTIME_TOKEN')
-  if not token:
-    return {}
-
-  authorization = f'Bearer {token}'
+  authorization = f'token {config.token}'
   return {
       'Authorization': authorization,
+      'Accept': 'application/vnd.github.v3+json'
   }
 
 
 def _get_artifacts_list_api_url(repo_owner, repo_name):
   """Returns the artifacts_api_url for |repo_name| owned by |repo_owner|."""
-  return (f'https://api.github.com/repos/{repo_owner}/'
+  github_api_url = os.getenv('GITHUB_API_URL', 'https://api.github.com')
+  return (f'{github_api_url}/repos/{repo_owner}/'
           f'{repo_name}/actions/artifacts')
 
 

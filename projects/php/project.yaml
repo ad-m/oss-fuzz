@@ -5,6 +5,12 @@ auto_ccs:
  - "smalyshev@gmail.com"
  - "nikita.ppv@gmail.com"
  - "dmitrystogov@gmail.com"
+ - "tovilo.ilija@gmail.com"
+ - "github@derickrethans.nl"
+fuzzing_engines:
+  - "afl"
+  - "honggfuzz"
+  - "libfuzzer"
 sanitizers:
  - address
  - undefined

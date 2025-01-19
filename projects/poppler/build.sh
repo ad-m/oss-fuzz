@@ -29,19 +29,19 @@ mkdir -p $BUILD
 
 # Install Boost headers
 cd $SRC/
-tar jxf boost_1_76_0.tar.bz2
-cd boost_1_76_0/
+tar jxf boost_1_87_0.tar.bz2
+cd boost_1_87_0/
 CFLAGS="" CXXFLAGS="" ./bootstrap.sh
 CFLAGS="" CXXFLAGS="" ./b2 headers
-cp -R boost/ /usr/include/
+./b2 --with-math install
 
 pushd $SRC/zlib
 CFLAGS=-fPIC ./configure --static --prefix=$PREFIX
 make install -j$(nproc)
 
 pushd $SRC
-tar zxf nss-3.75-with-nspr-4.32.tar.gz
-cd nss-3.75
+tar zxf nss-3.99-with-nspr-4.35.tar.gz
+cd nss-3.99
 nss_flag=""
 SAVE_CFLAGS="$CFLAGS"
 SAVE_CXXFLAGS="$CXXFLAGS"
@@ -66,9 +66,9 @@ CXXFLAGS="$SAVE_CXXFLAGS"
 
 # NSS has a .pc.in file but doesn't do anything with it
 cp nss/pkg/pkg-config/nss.pc.in $PREFIX/lib/pkgconfig/nss.pc
-sed -i "s#\${libdir}#${SRC}/nss-3.75/dist/Debug/lib#g" $PREFIX/lib/pkgconfig/nss.pc
-sed -i "s#\${includedir}#${SRC}/nss-3.75/dist/public/nss#g" $PREFIX/lib/pkgconfig/nss.pc
-sed -i "s#%NSS_VERSION%#3.75#g" $PREFIX/lib/pkgconfig/nss.pc
+sed -i "s#\${libdir}#${SRC}/nss-3.99/dist/Debug/lib#g" $PREFIX/lib/pkgconfig/nss.pc
+sed -i "s#\${includedir}#${SRC}/nss-3.99/dist/public/nss#g" $PREFIX/lib/pkgconfig/nss.pc
+sed -i "s#%NSS_VERSION%#3.99#g" $PREFIX/lib/pkgconfig/nss.pc
 cp dist/Debug/lib/pkgconfig/nspr.pc $PREFIX/lib/pkgconfig/
 
 pushd $SRC/freetype
@@ -84,7 +84,8 @@ make install
 
 mkdir -p $SRC/openjpeg/build
 pushd $SRC/openjpeg/build
-cmake .. -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX
+sed -i "s#\${LCMS_LIBNAME}#-L$PREFIX/lib \${LCMS_LIBNAME}#" ../src/bin/jp2/CMakeLists.txt
+PKG_CONFIG=`which pkg-config` cmake .. -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX
 make -j$(nproc) install
 
 if [ "$SANITIZER" != "memory" ]; then
@@ -99,9 +100,7 @@ if [ "$SANITIZER" != "memory" ]; then
     ninja -C _builddir install
     popd
 
-    pushd $SRC/glib-2.70.0
-    # remove once there's a released glib that contains https://gitlab.gnome.org/GNOME/glib/-/merge_requests/2324
-    sed -i s#https://ftp.pcre.org/pub/pcre/pcre-8.37.tar.bz2#https://sourceforge.net/projects/pcre/files/pcre/8.37/pcre-8.37.tar.bz2# subprojects/libpcre.wrap
+    pushd $SRC/glib-2.80.0
     meson \
         --prefix=$PREFIX \
         --libdir=lib \
@@ -131,12 +130,13 @@ if [ "$SANITIZER" != "memory" ]; then
     popd
 
     pushd $SRC/pango
-    meson \
+    CFLAGS="$CFLAGS -fno-sanitize=vptr" CXXFLAGS="$CXXFLAGS -fno-sanitize=vptr" meson \
         -Ddefault_library=static \
         --prefix=$PREFIX \
         --libdir=lib \
         _builddir
     sed -i -e 's/ -Werror=implicit-fallthrough//g' _builddir/build.ninja
+    sed -i -e 's/#pragma GCC diagnostic error   "-Wcast-function-type"//g' subprojects/harfbuzz/src/hb.hh
     ninja -C _builddir
     ninja -C _builddir install
     popd
@@ -144,15 +144,20 @@ fi
 
 pushd $SRC/qtbase
 # add the flags to Qt build too
-sed -i -e "s/QMAKE_CXXFLAGS    += -stdlib=libc++/QMAKE_CXXFLAGS    += -stdlib=libc++  $CXXFLAGS\nQMAKE_CFLAGS += $CFLAGS/g" mkspecs/linux-clang-libc++/qmake.conf
-sed -i -e "s/QMAKE_LFLAGS      += -stdlib=libc++/QMAKE_LFLAGS      += -stdlib=libc++ -lpthread $CXXFLAGS/g" mkspecs/linux-clang-libc++/qmake.conf
+# Use ~ as sed delimiters instead of the usual "/" because C(XX)FLAGS may
+# contain paths with slashes.
+sed -i -e "s~QMAKE_CXXFLAGS    += -stdlib=libc++~QMAKE_CXXFLAGS    += -stdlib=libc++  $CXXFLAGS\nQMAKE_CFLAGS += $CFLAGS~g" mkspecs/linux-clang-libc++/qmake.conf
+sed -i -e "s~QMAKE_LFLAGS      += -stdlib=libc++~QMAKE_LFLAGS      += -stdlib=libc++ -lpthread $CXXFLAGS~g" mkspecs/linux-clang-libc++/qmake.conf
+sed -i -e "s~QMAKE_CXX               = \$\${CROSS_COMPILE}clang++~QMAKE_CXX = $CXX~g" mkspecs/common/clang.conf
+sed -i -e "s~QMAKE_CC                = \$\${CROSS_COMPILE}clang~QMAKE_CC = $CC~g" mkspecs/common/clang.conf
 # disable sanitize=vptr for harfbuzz since it compiles without rtti
-sed -i -e "s/TARGET = qtharfbuzz/TARGET = qtharfbuzz\nQMAKE_CXXFLAGS += -fno-sanitize=vptr/g" src/3rdparty/harfbuzz-ng/harfbuzz-ng.pro
+sed -i -e "s~TARGET = qtharfbuzz~TARGET = qtharfbuzz\nQMAKE_CXXFLAGS += -fno-sanitize=vptr~g" src/3rdparty/harfbuzz-ng/harfbuzz-ng.pro
 # make qmake compile faster
 sed -i -e "s/MAKE\")/MAKE\" -j$(nproc))/g" configure
 # Fix memory stuff in qt 5.15 unfixable since branch is closed now
 sed -i -e "s/struct statx statxBuffer/struct statx statxBuffer = {}/g" src/corelib/io/qfilesystemengine_unix.cpp
-./configure --glib=no --libpng=qt -opensource -confirm-license -static -no-opengl -no-icu -no-pkg-config -platform linux-clang-libc++ -nomake tests -nomake examples -prefix $PREFIX -D QT_NO_DEPRECATED_WARNINGS
+sed -i -e "s/if (m_compressAlgo == RCCResourceLibrary::CompressionAlgorithm::Zlib) {/if (false) {/g" src/tools/rcc/rcc.cpp
+./configure --zlib=system --glib=no --libpng=qt -opensource -confirm-license -static -no-opengl -no-icu -platform linux-clang-libc++ -v -nomake tests -nomake examples -prefix $PREFIX -D QT_NO_DEPRECATED_WARNINGS -I $PREFIX/include/ -L $PREFIX/lib/
 make -j$(nproc)
 make install
 popd
@@ -184,6 +189,8 @@ cmake .. \
   -DENABLE_LIBJPEG=OFF \
   -DENABLE_GLIB=$POPPLER_ENABLE_GLIB \
   -DENABLE_LIBCURL=OFF \
+  -DENABLE_GPGME=OFF \
+  -DENABLE_QT6=OFF \
   -DENABLE_QT5=ON \
   -DENABLE_UTILS=OFF \
   -DWITH_Cairo=$POPPLER_ENABLE_GLIB \
@@ -203,7 +210,7 @@ fi
 BUILD_CFLAGS="$CFLAGS `pkg-config --static --cflags $DEPS`"
 BUILD_LDFLAGS="-Wl,-static `pkg-config --static --libs $DEPS`"
 # static linking is hard ^_^
-NSS_STATIC_LIBS=`ls $SRC/nss-3.75/dist/Debug/lib/lib*.a`
+NSS_STATIC_LIBS=`ls $SRC/nss-3.99/dist/Debug/lib/lib*.a`
 NSS_STATIC_LIBS="$NSS_STATIC_LIBS $NSS_STATIC_LIBS $NSS_STATIC_LIBS"
 BUILD_LDFLAGS="$BUILD_LDFLAGS $NSS_STATIC_LIBS"
 

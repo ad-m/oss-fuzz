@@ -41,7 +41,9 @@ make install
 GMP_CONFIGURE_FLAGS="--disable-assembly --disable-fat"
 
 cd $SRC/gmp
-bash .bootstrap
+if [[ -e .bootstrap ]]; then
+    bash .bootstrap
+fi
 ASAN_OPTIONS=detect_leaks=0 \
   ./configure --disable-shared --prefix=$DEPS_PATH $GMP_CONFIGURE_FLAGS
 make -j$(nproc)
@@ -54,7 +56,7 @@ bash bootstrap
 make -j$(nproc)
 make install
 
-NETTLE_CONFIGURE_FLAGS=""
+NETTLE_CONFIGURE_FLAGS="--disable-assembler"  # Temporarily disalbe asm to work around error "undefined reference to [...]"
 if [[ $CFLAGS = *sanitize=memory* ]]; then
   NETTLE_CONFIGURE_FLAGS="--disable-assembler --disable-fat"
 fi

@@ -29,14 +29,16 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   fwrite(data, size, 1, fp);
   fclose(fp);
 
-  bfd *file;
-  file = bfd_openr (filename, NULL);
-  if (file) {
-  char **matches;
-  if (bfd_check_format_matches (file, bfd_object, &matches)) {
-    load_separate_debug_files(file, bfd_get_filename(file));
+  bfd *file = bfd_openr (filename, NULL);
+  if (file)
+    {
+      if (bfd_check_format (file, bfd_object))
+	{
+	  load_separate_debug_files (file, bfd_get_filename (file));
+	  free_debug_memory ();
+	}
+      bfd_close_all_done (file);
     }
-  }
   unlink(filename);
   return 0;
 }
